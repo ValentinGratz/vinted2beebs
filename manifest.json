@@ -12,9 +12,7 @@
     {
       "matches": [
         "https://www.vinted.fr/*",
-        "https://www.vinted.com/*",
-        "https://www.vinted.de/*",
-        "https://www.vinted.es/*"
+        "https://www.vinted.com/*"
       ],
       "js": [
         "src/content.js"
