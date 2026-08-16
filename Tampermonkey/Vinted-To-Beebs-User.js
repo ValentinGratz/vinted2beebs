@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Vinted → Beebs (by Valentin)
 // @namespace    https://github.com/ValentinGratz
-// @version      1.0.0
+// @version      1.1.0
 // @description  Exporte une annonce Vinted vers Beebs en 1 clic - titre, description, prix, taille, photos
 // @author       ValentinGratz
 // @match        https://www.vinted.fr/items/*
@@ -113,7 +113,25 @@
         return beebs;
     }
 
+    function isItemPage() {
+        const isItemUrl = location.pathname.includes('/items/') || location.pathname.includes('/item/');
+        const hasTitle = !!document.querySelector('[data-testid="item-title"], h1[data-testid="item-title"]');
+        const isMemberPage = location.pathname.includes('/member/') || location.pathname.includes('/members/');
+        return isItemUrl && hasTitle && !isMemberPage;
+    }
+
+    function isOwnItem() {
+        // optionnel : décommente si tu veux seulement tes propres annonces
+        // return !!document.querySelector('[data-testid="edit-item"], a[href*="/items/"][href*="/edit"]');
+        return true;
+    }
+
     function createUI() {
+        if (!isItemPage() || !isOwnItem()) {
+            document.getElementById('vinted-to-beebs-btn')?.remove();
+            document.getElementById('vinted-beebs-panel')?.remove();
+            return;
+        }
         if (document.getElementById('vinted-to-beebs-btn')) return;
 
         const titleContainer = document.querySelector('[data-testid="item-title"]')?.parentElement || document.querySelector('h1')?.parentElement;
