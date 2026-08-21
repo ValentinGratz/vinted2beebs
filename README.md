@@ -6,6 +6,7 @@ Même principe que [Vinted → Leboncoin](https://github.com/ValentinGratz/vinte
 
 > ⚠️ **Important :** Beebs ne permet officiellement de vendre que depuis l'application mobile. Cette extension ne poste pas directement (API non publique pour la V1). Elle **prépare et copie tout** pour que tu n'aies qu'à coller dans l'app Beebs en 10 secondes.
 
+> ⚠️ **Tu utilises CCleaner / BleachBit ?** Lis [ATTENTION_CCLEANER_BLEACHBIT.md](./ATTENTION_CCLEANER_BLEACHBIT.md) sinon tu vas perdre tes données.
 ---
 
 ## 🚀 Fonctionnalités
