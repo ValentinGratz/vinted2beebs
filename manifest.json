@@ -1,14 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Vinted → Beebs",
-  "version": "2.1.1",
-  "description": "Fix CORS + URL /fr/listing",
+  "version": "3.0.0",
+  "description": "Fix CORS + vraies photos + vraie description",
   "permissions": ["storage"],
-  "host_permissions": ["https://images*.vinted.net/*", "https://*.beebs.app/*", "https://www.beebs.app/*"],
+  "host_permissions": ["https://*.vinted.fr/*", "https://*.vinted.net/*", "https://*.beebs.app/*"],
   "background": { "service_worker": "src/background.js" },
   "content_scripts": [
     {
-      "matches": ["https://www.vinted.fr/*", "https://*.beebs.app/*", "https://www.beebs.app/*"],
+      "matches": ["https://*.vinted.fr/*", "https://*.vinted.net/*", "https://*.beebs.app/*"],
       "js": ["src/content.js"],
       "run_at": "document_idle"
     }
