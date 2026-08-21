@@ -1,36 +1,17 @@
 {
   "manifest_version": 3,
-  "name": "Vinted \u2192 Beebs - Export en 1 clic",
-  "version": "1.0.0",
-  "description": "Exporte tes annonces Vinted vers Beebs (Beebs by Kiabi) en 1 clic. Titre, description, prix, photos.",
-  "icons": {
-    "16": "src/icon16.png",
-    "48": "src/icon48.png",
-    "128": "src/icon128.png"
-  },
+  "name": "Vinted → Beebs",
+  "version": "2.1.1",
+  "description": "Fix CORS + URL /fr/listing",
+  "permissions": ["storage"],
+  "host_permissions": ["https://images*.vinted.net/*", "https://*.beebs.app/*", "https://www.beebs.app/*"],
+  "background": { "service_worker": "src/background.js" },
   "content_scripts": [
     {
-      "matches": [
-        "https://www.vinted.fr/*",
-        "https://www.vinted.com/*"
-      ],
-      "js": [
-        "src/content.js"
-      ],
+      "matches": ["https://www.vinted.fr/*", "https://*.beebs.app/*", "https://www.beebs.app/*"],
+      "js": ["src/content.js"],
       "run_at": "document_idle"
     }
   ],
-  "permissions": [
-    "clipboardWrite",
-    "downloads"
-  ],
-  "host_permissions": [
-    "https://*.vinted.fr/*",
-    "https://*.vinted.com/*",
-    "https://www.beebs.app/*"
-  ],
-  "action": {
-    "default_title": "Vinted \u2192 Beebs",
-    "default_popup": "src/popup.html"
-  }
+  "action": { "default_popup": "src/popup.html" }
 }
