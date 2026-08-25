@@ -105,6 +105,90 @@ function renderImageBadge(show) {
   container.appendChild(badge);
 }
 
+// ---------------------------------------------------------------------------
+// Badges sur les grilles (dressing, recherche, favoris...) (issue #2 - suite)
+// La page dressing affiche toutes les annonces en vignettes : il faut
+// scanner chaque carte, pas juste la page d'une annonce individuelle.
+// ---------------------------------------------------------------------------
+const V2B_GRID_BADGE_CLASS = 'v2b-grid-badge';
+const V2B_SCANNED_ATTR = 'data-v2b-scanned';
+
+function extractItemIdFromHref(href) {
+  const m = (href || '').match(/\/items\/(\d+)/);
+  return m ? m[1] : null;
+}
+
+function findCardContainer(link) {
+  // Vinted change régulièrement ses data-testid ; on essaie plusieurs
+  // sélecteurs plausibles avant de retomber sur le lien lui-même.
+  return link.closest('[data-testid*="grid-item"]') ||
+         link.closest('[data-testid*="item-box"]') ||
+         link.closest('article') ||
+         link.closest('div') ||
+         link;
+}
+
+function addGridBadge(card) {
+  if (card.querySelector(`.${V2B_GRID_BADGE_CLASS}`)) return;
+  if (getComputedStyle(card).position === 'static') card.style.position = 'relative';
+  const badge = document.createElement('div');
+  badge.className = V2B_GRID_BADGE_CLASS;
+  badge.textContent = '⚡';
+  badge.title = 'Déjà exporté vers Beebs';
+  card.appendChild(badge);
+}
+
+function removeGridBadge(card) {
+  card?.querySelector(`.${V2B_GRID_BADGE_CLASS}`)?.remove();
+}
+
+async function scanGridForBadges(root = document) {
+  const links = root.querySelectorAll(`a[href*="/items/"]:not([${V2B_SCANNED_ATTR}])`);
+  for (const link of links) {
+    link.setAttribute(V2B_SCANNED_ATTR, '1');
+    const itemId = extractItemIdFromHref(link.getAttribute('href'));
+    if (!itemId) continue;
+    const state = await getExportedState(itemId);
+    if (!state) continue;
+    addGridBadge(findCardContainer(link));
+  }
+}
+
+// Met à jour en direct les badges déjà affichés à l'écran quand un export
+// est fait/annulé dans un autre onglet (ou après un rescan périodique).
+function updateGridBadgesForItem(itemId, exported) {
+  document.querySelectorAll(`a[href*="/items/${itemId}"]`).forEach(link => {
+    const card = findCardContainer(link);
+    if (exported) addGridBadge(card); else removeGridBadge(card);
+  });
+}
+
+if (IS_VINTED) {
+  // Scan initial, puis à chaque changement du DOM (scroll infini,
+  // navigation interne à la SPA Vinted qui ne recharge pas la page).
+  scanGridForBadges();
+  const v2bGridObserver = new MutationObserver(() => {
+    clearTimeout(window.__v2bGridScanTimeout);
+    window.__v2bGridScanTimeout = setTimeout(() => scanGridForBadges(), 300);
+  });
+  v2bGridObserver.observe(document.body, { childList: true, subtree: true });
+
+  // Filet de sécurité : re-scan périodique (au cas où le MutationObserver
+  // rate un changement, ex. remplacement de nœuds sans ajout/suppression).
+  setInterval(() => scanGridForBadges(), 4000);
+
+  if (chrome?.storage?.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== 'local') return;
+      for (const key of Object.keys(changes)) {
+        if (!key.startsWith('vinted2beebs_exported_')) continue;
+        const itemId = key.replace('vinted2beebs_exported_', '');
+        updateGridBadgesForItem(itemId, !!changes[key].newValue);
+      }
+    });
+  }
+}
+
 if (IS_VINTED) {
   setTimeout(async () => {
     const itemId = getVintedItemId(location.href);

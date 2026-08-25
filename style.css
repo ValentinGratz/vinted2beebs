@@ -18,3 +18,20 @@
   box-shadow: 0 1px 4px rgba(0, 0, 0, .3);
   pointer-events: none;
 }
+
+/* Badge compact affiché sur chaque vignette de la grille (dressing,
+   recherche, favoris...) quand l'annonce a déjà été exportée vers Beebs. */
+.v2b-grid-badge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 998;
+  background: #eab308;
+  color: #000;
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .3);
+  pointer-events: none;
+}
