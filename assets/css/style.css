@@ -1,0 +1,37 @@
+/* assets/css/style.css - vinted2beebs
+   Badge "déjà exporté vers Beebs" affiché en haut à gauche de l'image
+   principale de l'annonce (issue #2, partie 2 - compat vinted2leboncoin).
+   Leboncoin place ses badges/boutons en haut à droite (vc-lbc-badge,
+   vc-lbc-transfer-btn) : les deux ne se chevauchent donc jamais. */
+.v2b-img-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 999998;
+  background: #eab308;
+  color: #000;
+  font-family: sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .3);
+  pointer-events: none;
+}
+
+/* Badge compact affiché sur chaque vignette de la grille (dressing,
+   recherche, favoris...) quand l'annonce a déjà été exportée vers Beebs. */
+.v2b-grid-badge {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  z-index: 998;
+  background: #eab308;
+  color: #000;
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .3);
+  pointer-events: none;
+}
