@@ -22,6 +22,10 @@ Même principe que [Vinted → Leboncoin](https://github.com/ValentinGratz/vinte
   - Télécharger photos une par une ou toutes d'un coup
   - Bouton "Ouvrir Beebs + Copier tout" → ouvre beebs.app avec tout dans le presse-papier
 
+Le badge comme quoi l'article est bien importé : 
+<img width="257" height="398" alt="image" src="https://github.com/user-attachments/assets/e8bd656d-f536-4641-a31c-ee107ae3ab28" />
+
+
 100% local, open source, aucune donnée envoyée.
 
 ---
