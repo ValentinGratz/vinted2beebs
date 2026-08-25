@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Vinted → Beebs",
-  "version": "3.0.0",
+  "version": "3.2.0",
   "description": "Fix CORS + vraies photos + vraie description",
   "permissions": ["storage"],
   "host_permissions": ["https://*.vinted.fr/*", "https://*.vinted.net/*", "https://*.beebs.app/*"],
@@ -10,6 +10,7 @@
     {
       "matches": ["https://*.vinted.fr/*", "https://*.vinted.net/*", "https://*.beebs.app/*"],
       "js": ["src/content.js"],
+      "css": ["assets/css/style.css"],
       "run_at": "document_idle"
     }
   ],
