@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name Vinted → Beebs (by Valentin) - V3.2.1 PERSIST+GRID
+// @name Vinted → Beebs (by Valentin) - V3.2.2 PERSIST+GRID
 // @namespace https://github.com/ValentinGratz
 // @version 3.2.1
 // @description Exporte Vinted vers Beebs en 1 clic - description propre (Craquez pour...), prix, photos via GM_xmlhttpRequest, état "Exporté" persistant + badges sur la grille du dressing, compat vinted2leboncoin
@@ -14,6 +14,7 @@
 // @grant GM_getValue
 // @grant GM_deleteValue
 // @grant GM_notification
+// @grant GM_openInTab
 // @connect vinted.net
 // @connect vinted.fr
 // @run-at document-idle
@@ -45,10 +46,7 @@ style.textContent = `
 document.head.appendChild(style);
 
 // ---------------------------------------------------------------------------
-// Persistance de l'état "Exporté" (issue #2, partie 1)
-// Clé: vinted2beebs_exported_{item_id} -> { date: ISOString, url: string }
-// GM_setValue/GM_getValue = stockage propre au script, partagé entre
-// vinted.fr et beebs.app, survit au refresh/fermeture de page.
+// Persistance de l'état "Exporté"
 // ---------------------------------------------------------------------------
 function getVintedItemId(url){
   const m = (url || location.href).match(/\/items\/(\d+)/);
@@ -72,7 +70,7 @@ function clearExportedState(itemId){
 }
 
 // ---------------------------------------------------------------------------
-// Compat vinted2leboncoin (issue #2, partie 2 - bonus)
+// Compat vinted2leboncoin
 // ---------------------------------------------------------------------------
 function detectLeboncoinInstalled(){
   if(document.querySelector('#vc-lbc-transfer-btn, .vc-lbc-badge')) return true;
@@ -85,8 +83,7 @@ function detectLeboncoinInstalled(){
   return false;
 }
 
-// Badge compact en haut à gauche de l'image principale de l'annonce.
-// Leboncoin utilise le haut à droite -> pas de conflit visuel.
+// Badge compact sur l'image principale
 function renderImageBadge(show){
   const existing = document.getElementById('v2b-img-badge');
   if(!show){ existing?.remove(); return; }
@@ -108,7 +105,7 @@ function renderImageBadge(show){
 }
 
 // ---------------------------------------------------------------------------
-// Badges sur les grilles (dressing, recherche, favoris...)
+// Badges sur les grilles
 // ---------------------------------------------------------------------------
 const V2B_GRID_BADGE_CLASS = 'v2b-grid-badge';
 const V2B_SCANNED_ATTR = 'data-v2b-scanned';
@@ -154,7 +151,6 @@ function getCleanDesc(){
     if(cut!==-1) chunk = chunk.slice(0,cut);
     return chunk.trim();
   }
-  // fallback: cherche le plus long span hors protection consommateur
   const all = [...document.querySelectorAll('span,div')].filter(s=>s.innerText && s.innerText.length>80 && s.innerText.length<2000 && s.children.length<=1 &&!s.innerText.includes('Les lois en matière') &&!s.innerText.includes('Publicité'));
   return all.sort((a,b)=>b.innerText.length-a.innerText.length)[0]?.innerText.trim() || "";
 }
@@ -190,9 +186,6 @@ function fetchAsDataUrl(url){
 }
 
 if(IS_VINTED){
-  // Scan de la grille (dressing, recherche, favoris) : initial, puis à
-  // chaque changement du DOM (scroll infini, navigation SPA sans reload),
-  // avec un filet de sécurité en cas de mutation ratée.
   scanGridForBadges();
   const v2bGridObserver = new MutationObserver(() => {
     clearTimeout(window.__v2bGridScanTimeout);
@@ -210,6 +203,39 @@ if(IS_VINTED){
     const leboncoinDetected = detectLeboncoinInstalled();
     if(leboncoinDetected) console.log('[vinted2beebs] vinted2leboncoin détecté, badge Beebs en haut à gauche de l\'image');
 
+    async function doExport(statusEl, buttonEl){
+      buttonEl.textContent='⏳ Récupération...';
+      const data = extractVintedData();
+      statusEl.textContent = `Detect: ${data.photos.length} | DL...`;
+
+      const dataUrls = [];
+      for(let u of data.photos){
+        const d = await fetchAsDataUrl(u);
+        if(d) dataUrls.push(d);
+        statusEl.textContent = `Detect: ${data.photos.length} | OK: ${dataUrls.length}`;
+      }
+
+      const payload = { fullTitle: data.title, description: data.description, price: data.priceRaw, photosData: dataUrls, photos: data.photos };
+      GM_setValue('lastBeebsExport', payload);
+      localStorage.setItem('lastBeebsExport', JSON.stringify(payload));
+
+      if(itemId) setExportedState(itemId, location.href);
+      renderImageBadge(true);
+      renderExportedUI();
+
+      GM_notification({
+        title:'Vinted → Beebs',
+        text:`${dataUrls.length} photos + description prêtes, Beebs va s’ouvrir…`,
+        timeout:4000
+      });
+
+      GM_openInTab('https://www.beebs.app/fr/listing', {
+        active: true,
+        insert: true,
+        setParent: true
+      });
+    }
+
     function renderClassicButton(){
       document.getElementById('vinted-to-beebs-btn')?.remove();
       document.getElementById('v2b-status')?.remove();
@@ -225,28 +251,7 @@ if(IS_VINTED){
       status.textContent='Prêt';
       h1.parentElement.appendChild(status);
 
-      btn.onclick = async ()=>{
-        btn.textContent='⏳ Récupération...';
-        const data = extractVintedData();
-        status.textContent = `Detect: ${data.photos.length} | DL...`;
-
-        const dataUrls = [];
-        for(let u of data.photos){
-          const d = await fetchAsDataUrl(u);
-          if(d) dataUrls.push(d);
-          status.textContent = `Detect: ${data.photos.length} | OK: ${dataUrls.length}`;
-        }
-
-        const payload = { fullTitle: data.title, description: data.description, price: data.priceRaw, photosData: dataUrls, photos: data.photos };
-        GM_setValue('lastBeebsExport', payload);
-        localStorage.setItem('lastBeebsExport', JSON.stringify(payload)); // fallback pour beebs.app
-
-        GM_notification({title:'Vinted → Beebs', text:`${dataUrls.length} photos + description propre prêtes! Va sur beebs.app/fr/listing`, timeout:4000});
-
-        if(itemId) setExportedState(itemId, location.href);
-        renderImageBadge(true);
-        renderExportedUI();
-      };
+      btn.onclick = ()=>doExport(status, btn);
     }
 
     function renderExportedUI(){
@@ -258,13 +263,15 @@ if(IS_VINTED){
 
       const box = document.createElement('div');
       box.id = 'v2b-status';
-      box.style.cssText = 'margin:10px 0;background:#fef9c3;border:2px solid #eab308;padding:10px;border-radius:12px;font-family:sans-serif';
+      box.style.cssText = 'margin:10px 0;background:#fef9c3;border:2px solid #eab308;padding:10px;border-radius:12px;font-family:sans-serif;overflow:visible;max-height:none;display:flex;flex-direction:column;gap:6px;';
       box.innerHTML = `
         <button id="v2b-done-btn" disabled style="width:100%;background:#22c55e;color:#fff;border:0;padding:10px 14px;border-radius:10px;font-weight:700;cursor:default">✅ Exporté sur Beebs</button>
         <div style="font-size:12px;color:#555;margin-top:6px" title="${s.date}">Exporté le ${formatDateFR(s.date)}
           <span id="v2b-clear-btn" title="Réinitialiser l'état exporté" style="cursor:pointer;color:#b91c1c;margin-left:6px">✕</span>
         </div>
-        <a href="https://www.beebs.app/fr/listing" target="_blank" style="display:inline-block;margin-top:6px;font-size:12px;color:#555;text-decoration:underline">Ré-ouvrir Beebs</a>`;
+        <button id="v2b-reimport-btn" style="width:100%;background:#eab308;color:#000;border:0;padding:10px 14px;border-radius:10px;font-weight:700;cursor:pointer;margin-top:8px">🔄 Réimporter / Retester</button>
+        <div id="v2b-reimport-status" style="font-size:11px;color:#555;margin-top:4px"></div>
+        <a href="https://www.beebs.app/fr/listing" target="_blank" style="display:inline-block;margin-top:6px;font-size:12px;color:#555;text-decoration:underline">Ré-ouvrir Beebs (optionnel)</a>`;
       h1.parentElement.appendChild(box);
 
       const reset = (e) => {
@@ -275,9 +282,16 @@ if(IS_VINTED){
       };
       document.getElementById('v2b-clear-btn').onclick = reset;
       document.getElementById('v2b-done-btn').oncontextmenu = reset;
+
+      const reBtn = document.getElementById('v2b-reimport-btn');
+      const reStatus = document.getElementById('v2b-reimport-status');
+      reBtn.onclick = (e)=>{
+        e.preventDefault();
+        doExport(reStatus, reBtn);
+      };
     }
 
-    if(document.getElementById('vinted-to-beebs-btn') || document.getElementById('v2b-status')) return; // déjà rendu pour cette annonce
+    if(document.getElementById('vinted-to-beebs-btn') || document.getElementById('v2b-status')) return;
 
     const existing = itemId ? getExportedState(itemId) : null;
     if(existing){
