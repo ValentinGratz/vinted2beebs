@@ -269,13 +269,6 @@ if (IS_VINTED) {
   }, 1000);
 }
 
-// CORRECTION : l'ancienne version cherchait le texte "Craquez pour",
-// qui est la phrase d'accroche des annonces de l'auteur de l'extension.
-// Sur nos annonces, cette phrase n'existe pas -> description vide.
-// Nouvelle méthode, en 3 essais successifs :
-//   1. l'API interne de Vinted (texte complet, même si tronqué à l'écran)
-//   2. le bloc "description" de la page (en dépliant le "... plus")
-//   3. l'ancienne méthode "Craquez pour" en dernier recours
 // Lecture des données de l'annonce via l'API interne Vinted.
 // Mise en cache : un seul appel sert pour la description ET les photos.
 let __v2bItemPromise = null;
@@ -334,43 +327,15 @@ async function getPhotos() {
     .slice(0, 10);
 }
 
+// Description : on prend simplement le texte de la description de l'annonce,
+// tel qu'enregistré chez Vinted (complet, même s'il est coupé à l'écran).
+// Si Vinted ne répond pas, on lit le bloc description affiché sur la page.
 async function getDesc() {
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-  // 1. API Vinted (même site, on est déjà connecté)
   const item = await getItemApi();
-  const d = item?.description;
-  if (d && d.trim()) return d.trim();
+  if (item?.description) return item.description.trim();
 
-  // 2. Bloc description affiché sur la page
-  const selecteurs = [
-    '[itemprop="description"]',
-    '[data-testid="item-description"]',
-    '[data-testid="item-page-description"]',
-    '[data-testid*="description"]'
-  ];
-  for (const s of selecteurs) {
-    const el = document.querySelector(s);
-    if (!el) continue;
-    // Vinted coupe les longues descriptions avec "... plus" : on déplie
-    const plus = [...el.querySelectorAll('button, a, span')]
-      .find(b => /^(\.{3}\s*)?(voir\s+)?plus$/i.test((b.innerText || '').trim()));
-    if (plus) { plus.click(); await sleep(400); }
-    let t = (el.innerText || '').trim();
-    t = t.replace(/\n?\s*(voir\s+)?moins\s*$/i, '').trim();
-    if (t) return t;
-  }
-
-  // 3. Ancienne méthode (annonces commençant par "Craquez pour")
-  const body = document.body.innerText || "";
-  const start = body.indexOf('Craquez pour');
-  if (start !== -1) {
-    let chunk = body.slice(start);
-    let cut = chunk.search(/\n#|Envoi\n|Booster|Indiquer comme vendu|Marquer comme réservé|Masquer\nModifier/);
-    if (cut !== -1) chunk = chunk.slice(0, cut);
-    return chunk.trim();
-  }
-  return "";
+  const bloc = document.querySelector('[itemprop="description"], [data-testid="item-description"]');
+  return (bloc?.innerText || '').trim();
 }
 
 // Évite qu'un titre/description contenant < ou & casse l'affichage du panneau Beebs
