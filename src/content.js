@@ -214,7 +214,7 @@ if (IS_VINTED) {
         ? desc.slice(0, 250) + (desc.length > 250 ? '...' : '')
         : '⚠️ Description non trouvée sur la page') + '\n\nPrix: ' + price;
 
-      let photos = [...new Set([...document.querySelectorAll('img[src*="vinted.net"]')].map(i => i.src).filter(s => !s.includes('avatar') && !s.includes('25x25') && !s.includes('50x50')))].slice(0, 10);
+      const photos = await getPhotos();
       document.getElementById('st').innerText = `Detect: ${photos.length} | fetch background...`;
 
       const dataUrl = await new Promise(res => {
@@ -276,24 +276,71 @@ if (IS_VINTED) {
 //   1. l'API interne de Vinted (texte complet, même si tronqué à l'écran)
 //   2. le bloc "description" de la page (en dépliant le "... plus")
 //   3. l'ancienne méthode "Craquez pour" en dernier recours
-async function getDesc() {
-  const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-  // 1. API Vinted (même site, on est déjà connecté)
+// Lecture des données de l'annonce via l'API interne Vinted.
+// Mise en cache : un seul appel sert pour la description ET les photos.
+let __v2bItemPromise = null;
+function getItemApi() {
+  if (__v2bItemPromise) return __v2bItemPromise;
   const itemId = getVintedItemId(location.href);
-  if (itemId) {
+  __v2bItemPromise = (async () => {
+    if (!itemId) return null;
     try {
       const r = await fetch(`/api/v2/items/${itemId}`, {
         credentials: 'include',
         headers: { accept: 'application/json' }
       });
-      if (r.ok) {
-        const j = await r.json();
-        const d = j?.item?.description;
-        if (d && d.trim()) return d.trim();
-      }
-    } catch (e) { /* on passe à la méthode suivante */ }
+      if (!r.ok) return null;
+      const j = await r.json();
+      return j?.item || null;
+    } catch (e) { return null; }
+  })();
+  return __v2bItemPromise;
+}
+
+// CORRECTION photos : l'ancienne version prenait TOUTES les images vinted.net
+// de la page (logo, vignettes "articles similaires", autres annonces du
+// dressing...). On ne garde maintenant que les photos de l'article, en 3 essais :
+//   1. la liste des photos de l'annonce via l'API (pleine résolution)
+//   2. les images de la galerie de l'annonce sur la page
+//   3. l'ancienne méthode, mais limitée à la zone de la galerie
+async function getPhotos() {
+  // 1. API
+  const item = await getItemApi();
+  const apiPhotos = (item?.photos || [])
+    .map(ph => ph.full_size_url || ph.url)
+    .filter(Boolean);
+  if (apiPhotos.length) return [...new Set(apiPhotos)].slice(0, 10);
+
+  // 2. Galerie de l'annonce
+  const galerieSel = [
+    'img[data-testid^="item-photo-"]',
+    '[data-testid^="item-photo-"] img',
+    '[data-testid="item-photos"] img',
+    '.item-photos img'
+  ];
+  for (const s of galerieSel) {
+    const imgs = [...document.querySelectorAll(s)]
+      .map(i => i.currentSrc || i.src)
+      .filter(src => src && src.includes('vinted.net'));
+    if (imgs.length) return [...new Set(imgs)].slice(0, 10);
   }
+
+  // 3. Dernier recours : images vinted.net proches de la 1re photo uniquement
+  const premiere = document.querySelector('img[data-testid*="photo"]');
+  const zone = premiere?.closest('section, aside, [class*="photo"], [class*="gallery"]') || document;
+  return [...new Set([...zone.querySelectorAll('img[src*="vinted.net"]')]
+    .map(i => i.src)
+    .filter(s => !s.includes('avatar') && !s.includes('25x25') && !s.includes('50x50') && !s.endsWith('.svg')))]
+    .slice(0, 10);
+}
+
+async function getDesc() {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  // 1. API Vinted (même site, on est déjà connecté)
+  const item = await getItemApi();
+  const d = item?.description;
+  if (d && d.trim()) return d.trim();
 
   // 2. Bloc description affiché sur la page
   const selecteurs = [
@@ -356,8 +403,26 @@ if (IS_BEEBS) {
     if (document.getElementById('v2bB')) return;
     const p = document.createElement('div'); p.id = 'v2bB';
     p.style.cssText = 'position:fixed;right:12px;top:80px;z-index:9999999;background:#fef9c3;border:2px solid #eab308;padding:12px;border-radius:12px;width:350px;font-family:sans-serif;box-shadow:0 6px 18px rgba(0,0,0,.2)';
-    p.innerHTML = `<b>⚡ Import Vinted → Beebs</b><br><small style="display:block;word-break:break-word;margin:4px 0">${escHtml(lastBeebsExport.fullTitle)}</small><div style="font-size:11px;background:#fff;padding:6px;border-radius:6px;max-height:110px;overflow:auto;white-space:pre-wrap">${escHtml(lastBeebsExport.description) || '⚠️ Aucune description récupérée'}</div><div style="font-size:11px;margin:4px 0">Prix brut: <b>${lastBeebsExport.price}</b></div><div id="th" style="display:flex;gap:4px;flex-wrap:wrap;background:#fff;padding:4px;border-radius:6px;min-height:30px"></div><button id="f1" style="width:100%;background:#111;color:#fff;padding:12px;border-radius:10px;font-weight:600;cursor:pointer;margin-top:8px">1. Remplir + ${lastBeebsExport.photosData.length} photos auto</button><div id="st2" style="font-size:11px;margin-top:6px"></div>`;
+    p.innerHTML = `<div style="display:flex;align-items:center;gap:6px"><b style="flex:1">⚡ Import Vinted → Beebs</b><span id="v2bMin" title="Réduire" style="cursor:pointer;font-weight:bold;padding:0 6px;font-size:16px">–</span><span id="v2bClose" title="Fermer et oublier cet import" style="cursor:pointer;font-weight:bold;padding:0 6px;font-size:16px;color:#b91c1c">✕</span></div><div id="v2bBody"><small style="display:block;word-break:break-word;margin:4px 0">${escHtml(lastBeebsExport.fullTitle)}</small><div style="font-size:11px;background:#fff;padding:6px;border-radius:6px;max-height:110px;overflow:auto;white-space:pre-wrap">${escHtml(lastBeebsExport.description) || '⚠️ Aucune description récupérée'}</div><div style="font-size:11px;margin:4px 0">Prix brut: <b>${lastBeebsExport.price}</b></div><div id="th" style="display:flex;gap:4px;flex-wrap:wrap;background:#fff;padding:4px;border-radius:6px;min-height:30px"></div><button id="f1" style="width:100%;background:#111;color:#fff;padding:12px;border-radius:10px;font-weight:600;cursor:pointer;margin-top:8px">1. Remplir + ${lastBeebsExport.photosData.length} photos auto</button><div id="st2" style="font-size:11px;margin-top:6px"></div></div>`;
     document.body.appendChild(p);
+
+    // Bouton "–" : réduit le panneau en une petite pastille (re-clic pour rouvrir)
+    const corps = document.getElementById('v2bBody');
+    document.getElementById('v2bMin').onclick = () => {
+      const reduit = corps.style.display === 'none';
+      corps.style.display = reduit ? '' : 'none';
+      p.style.width = reduit ? '350px' : 'auto';
+      document.getElementById('v2bMin').textContent = reduit ? '–' : '+';
+      document.getElementById('v2bMin').title = reduit ? 'Réduire' : 'Agrandir';
+    };
+
+    // Bouton "✕" : ferme le panneau et oublie l'import en cours,
+    // pour qu'il ne réapparaisse plus sur les autres pages Beebs.
+    // (Pour le retrouver : refaire "Exporter vers Beebs" depuis l'annonce Vinted.)
+    document.getElementById('v2bClose').onclick = async () => {
+      p.remove();
+      try { await chrome.storage.local.remove('lastBeebsExport'); } catch (e) { /* ignore */ }
+    };
 
     const files = []; const th = document.getElementById('th');
     (lastBeebsExport.photosData || []).forEach((d, i) => {
