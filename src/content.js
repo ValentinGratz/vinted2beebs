@@ -1,5 +1,6 @@
-// src/content.js V3.2 - persistance état "Exporté" + compat vinted2leboncoin (fixes #2)
-console.log('Beebs V3.2 chargé sur', location.hostname);
+// src/content.js V3.3 - persistance état "Exporté" + compat vinted2leboncoin (fixes #2)
+// + correction récupération de la description
+console.log('Beebs V3.3 chargé sur', location.hostname);
 const IS_VINTED = location.hostname.includes('vinted');
 const IS_BEEBS = location.hostname.includes('beebs.app');
 
@@ -205,11 +206,13 @@ if (IS_VINTED) {
     async function runExtraction() {
       box.innerHTML = `<b>⚡ Export Beebs</b><br><span id="st">Scan photos...</span><div id="pr" style="font-size:11px;background:#fff;padding:5px;margin:5px 0;border-radius:6px;max-height:90px;overflow:auto;white-space:pre-wrap"></div><button id="goB" style="width:100%;background:#eab308;border:0;padding:8px;border-radius:8px;font-weight:bold;cursor:pointer">🚀 Exporter vers Beebs</button>`;
 
-      const desc = getDesc();
+      const desc = await getDesc();
       const price = getPrice();
       const title = document.querySelector('h1')?.innerText?.trim() || document.title.split('|')[0] || '';
 
-      document.getElementById('pr').innerText = desc.slice(0, 250) + '...\n\nPrix: ' + price;
+      document.getElementById('pr').innerText = (desc
+        ? desc.slice(0, 250) + (desc.length > 250 ? '...' : '')
+        : '⚠️ Description non trouvée sur la page') + '\n\nPrix: ' + price;
 
       let photos = [...new Set([...document.querySelectorAll('img[src*="vinted.net"]')].map(i => i.src).filter(s => !s.includes('avatar') && !s.includes('25x25') && !s.includes('50x50')))].slice(0, 10);
       document.getElementById('st').innerText = `Detect: ${photos.length} | fetch background...`;
@@ -266,7 +269,52 @@ if (IS_VINTED) {
   }, 1000);
 }
 
-function getDesc() {
+// CORRECTION : l'ancienne version cherchait le texte "Craquez pour",
+// qui est la phrase d'accroche des annonces de l'auteur de l'extension.
+// Sur nos annonces, cette phrase n'existe pas -> description vide.
+// Nouvelle méthode, en 3 essais successifs :
+//   1. l'API interne de Vinted (texte complet, même si tronqué à l'écran)
+//   2. le bloc "description" de la page (en dépliant le "... plus")
+//   3. l'ancienne méthode "Craquez pour" en dernier recours
+async function getDesc() {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  // 1. API Vinted (même site, on est déjà connecté)
+  const itemId = getVintedItemId(location.href);
+  if (itemId) {
+    try {
+      const r = await fetch(`/api/v2/items/${itemId}`, {
+        credentials: 'include',
+        headers: { accept: 'application/json' }
+      });
+      if (r.ok) {
+        const j = await r.json();
+        const d = j?.item?.description;
+        if (d && d.trim()) return d.trim();
+      }
+    } catch (e) { /* on passe à la méthode suivante */ }
+  }
+
+  // 2. Bloc description affiché sur la page
+  const selecteurs = [
+    '[itemprop="description"]',
+    '[data-testid="item-description"]',
+    '[data-testid="item-page-description"]',
+    '[data-testid*="description"]'
+  ];
+  for (const s of selecteurs) {
+    const el = document.querySelector(s);
+    if (!el) continue;
+    // Vinted coupe les longues descriptions avec "... plus" : on déplie
+    const plus = [...el.querySelectorAll('button, a, span')]
+      .find(b => /^(\.{3}\s*)?(voir\s+)?plus$/i.test((b.innerText || '').trim()));
+    if (plus) { plus.click(); await sleep(400); }
+    let t = (el.innerText || '').trim();
+    t = t.replace(/\n?\s*(voir\s+)?moins\s*$/i, '').trim();
+    if (t) return t;
+  }
+
+  // 3. Ancienne méthode (annonces commençant par "Craquez pour")
   const body = document.body.innerText || "";
   const start = body.indexOf('Craquez pour');
   if (start !== -1) {
@@ -275,8 +323,12 @@ function getDesc() {
     if (cut !== -1) chunk = chunk.slice(0, cut);
     return chunk.trim();
   }
-  return document.querySelector('[data-testid="item-description"] span')?.innerText?.trim() ||
-    document.querySelector('[data-testid="item-description"]')?.innerText?.trim() || "";
+  return "";
+}
+
+// Évite qu'un titre/description contenant < ou & casse l'affichage du panneau Beebs
+function escHtml(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function getPrice() {
@@ -304,7 +356,7 @@ if (IS_BEEBS) {
     if (document.getElementById('v2bB')) return;
     const p = document.createElement('div'); p.id = 'v2bB';
     p.style.cssText = 'position:fixed;right:12px;top:80px;z-index:9999999;background:#fef9c3;border:2px solid #eab308;padding:12px;border-radius:12px;width:350px;font-family:sans-serif;box-shadow:0 6px 18px rgba(0,0,0,.2)';
-    p.innerHTML = `<b>⚡ Import Vinted → Beebs</b><br><small style="display:block;word-break:break-word;margin:4px 0">${lastBeebsExport.fullTitle}</small><div style="font-size:11px;background:#fff;padding:6px;border-radius:6px;max-height:110px;overflow:auto;white-space:pre-wrap">${lastBeebsExport.description}</div><div style="font-size:11px;margin:4px 0">Prix brut: <b>${lastBeebsExport.price}</b></div><div id="th" style="display:flex;gap:4px;flex-wrap:wrap;background:#fff;padding:4px;border-radius:6px;min-height:30px"></div><button id="f1" style="width:100%;background:#111;color:#fff;padding:12px;border-radius:10px;font-weight:600;cursor:pointer;margin-top:8px">1. Remplir + ${lastBeebsExport.photosData.length} photos auto</button><div id="st2" style="font-size:11px;margin-top:6px"></div>`;
+    p.innerHTML = `<b>⚡ Import Vinted → Beebs</b><br><small style="display:block;word-break:break-word;margin:4px 0">${escHtml(lastBeebsExport.fullTitle)}</small><div style="font-size:11px;background:#fff;padding:6px;border-radius:6px;max-height:110px;overflow:auto;white-space:pre-wrap">${escHtml(lastBeebsExport.description) || '⚠️ Aucune description récupérée'}</div><div style="font-size:11px;margin:4px 0">Prix brut: <b>${lastBeebsExport.price}</b></div><div id="th" style="display:flex;gap:4px;flex-wrap:wrap;background:#fff;padding:4px;border-radius:6px;min-height:30px"></div><button id="f1" style="width:100%;background:#111;color:#fff;padding:12px;border-radius:10px;font-weight:600;cursor:pointer;margin-top:8px">1. Remplir + ${lastBeebsExport.photosData.length} photos auto</button><div id="st2" style="font-size:11px;margin-top:6px"></div>`;
     document.body.appendChild(p);
 
     const files = []; const th = document.getElementById('th');
@@ -344,7 +396,8 @@ if (IS_BEEBS) {
           inp.dispatchEvent(new Event('change', { bubbles: true }));
           inp.dispatchEvent(new Event('input', { bubbles: true }));
         });
-        document.getElementById('st2').innerText = `✓ ${files.length} photos injectées + titre + desc + prix`;
+        document.getElementById('st2').innerText = `✓ ${files.length} photos injectées + titre + prix` +
+          (di ? ' + desc' : ' — ⚠️ champ description non trouvé sur Beebs');
       } else {
         document.getElementById('st2').innerText = `Photos: ${files.length} - input file non trouvé`;
       }
