@@ -1,5 +1,6 @@
-// src/content.js V3.2 - persistance état "Exporté" + compat vinted2leboncoin (fixes #2)
-console.log('Beebs V3.2 chargé sur', location.hostname);
+// src/content.js V3.3 - persistance état "Exporté" + compat vinted2leboncoin (fixes #2)
+// + correction récupération de la description
+console.log('Beebs V3.3 chargé sur', location.hostname);
 const IS_VINTED = location.hostname.includes('vinted');
 const IS_BEEBS = location.hostname.includes('beebs.app');
 
@@ -205,13 +206,15 @@ if (IS_VINTED) {
     async function runExtraction() {
       box.innerHTML = `<b>⚡ Export Beebs</b><br><span id="st">Scan photos...</span><div id="pr" style="font-size:11px;background:#fff;padding:5px;margin:5px 0;border-radius:6px;max-height:90px;overflow:auto;white-space:pre-wrap"></div><button id="goB" style="width:100%;background:#eab308;border:0;padding:8px;border-radius:8px;font-weight:bold;cursor:pointer">🚀 Exporter vers Beebs</button>`;
 
-      const desc = getDesc();
+      const desc = await getDesc();
       const price = getPrice();
       const title = document.querySelector('h1')?.innerText?.trim() || document.title.split('|')[0] || '';
 
-      document.getElementById('pr').innerText = desc.slice(0, 250) + '...\n\nPrix: ' + price;
+      document.getElementById('pr').innerText = (desc
+        ? desc.slice(0, 250) + (desc.length > 250 ? '...' : '')
+        : '⚠️ Description non trouvée sur la page') + '\n\nPrix: ' + price;
 
-      let photos = [...new Set([...document.querySelectorAll('img[src*="vinted.net"]')].map(i => i.src).filter(s => !s.includes('avatar') && !s.includes('25x25') && !s.includes('50x50')))].slice(0, 10);
+      const photos = await getPhotos();
       document.getElementById('st').innerText = `Detect: ${photos.length} | fetch background...`;
 
       const dataUrl = await new Promise(res => {
@@ -266,17 +269,78 @@ if (IS_VINTED) {
   }, 1000);
 }
 
-function getDesc() {
-  const body = document.body.innerText || "";
-  const start = body.indexOf('Craquez pour');
-  if (start !== -1) {
-    let chunk = body.slice(start);
-    let cut = chunk.search(/\n#|Envoi\n|Booster|Indiquer comme vendu|Marquer comme réservé|Masquer\nModifier/);
-    if (cut !== -1) chunk = chunk.slice(0, cut);
-    return chunk.trim();
+// Lecture des données de l'annonce via l'API interne Vinted.
+// Mise en cache : un seul appel sert pour la description ET les photos.
+let __v2bItemPromise = null;
+function getItemApi() {
+  if (__v2bItemPromise) return __v2bItemPromise;
+  const itemId = getVintedItemId(location.href);
+  __v2bItemPromise = (async () => {
+    if (!itemId) return null;
+    try {
+      const r = await fetch(`/api/v2/items/${itemId}`, {
+        credentials: 'include',
+        headers: { accept: 'application/json' }
+      });
+      if (!r.ok) return null;
+      const j = await r.json();
+      return j?.item || null;
+    } catch (e) { return null; }
+  })();
+  return __v2bItemPromise;
+}
+
+// CORRECTION photos : l'ancienne version prenait TOUTES les images vinted.net
+// de la page (logo, vignettes "articles similaires", autres annonces du
+// dressing...). On ne garde maintenant que les photos de l'article, en 3 essais :
+//   1. la liste des photos de l'annonce via l'API (pleine résolution)
+//   2. les images de la galerie de l'annonce sur la page
+//   3. l'ancienne méthode, mais limitée à la zone de la galerie
+async function getPhotos() {
+  // 1. API
+  const item = await getItemApi();
+  const apiPhotos = (item?.photos || [])
+    .map(ph => ph.full_size_url || ph.url)
+    .filter(Boolean);
+  if (apiPhotos.length) return [...new Set(apiPhotos)].slice(0, 10);
+
+  // 2. Galerie de l'annonce
+  const galerieSel = [
+    'img[data-testid^="item-photo-"]',
+    '[data-testid^="item-photo-"] img',
+    '[data-testid="item-photos"] img',
+    '.item-photos img'
+  ];
+  for (const s of galerieSel) {
+    const imgs = [...document.querySelectorAll(s)]
+      .map(i => i.currentSrc || i.src)
+      .filter(src => src && src.includes('vinted.net'));
+    if (imgs.length) return [...new Set(imgs)].slice(0, 10);
   }
-  return document.querySelector('[data-testid="item-description"] span')?.innerText?.trim() ||
-    document.querySelector('[data-testid="item-description"]')?.innerText?.trim() || "";
+
+  // 3. Dernier recours : images vinted.net proches de la 1re photo uniquement
+  const premiere = document.querySelector('img[data-testid*="photo"]');
+  const zone = premiere?.closest('section, aside, [class*="photo"], [class*="gallery"]') || document;
+  return [...new Set([...zone.querySelectorAll('img[src*="vinted.net"]')]
+    .map(i => i.src)
+    .filter(s => !s.includes('avatar') && !s.includes('25x25') && !s.includes('50x50') && !s.endsWith('.svg')))]
+    .slice(0, 10);
+}
+
+// Description : on prend simplement le texte de la description de l'annonce,
+// tel qu'enregistré chez Vinted (complet, même s'il est coupé à l'écran).
+// Si Vinted ne répond pas, on lit le bloc description affiché sur la page.
+async function getDesc() {
+  const item = await getItemApi();
+  if (item?.description) return item.description.trim();
+
+  const bloc = document.querySelector('[itemprop="description"], [data-testid="item-description"]');
+  return (bloc?.innerText || '').trim();
+}
+
+// Évite qu'un titre/description contenant < ou & casse l'affichage du panneau Beebs
+function escHtml(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 function getPrice() {
@@ -304,8 +368,26 @@ if (IS_BEEBS) {
     if (document.getElementById('v2bB')) return;
     const p = document.createElement('div'); p.id = 'v2bB';
     p.style.cssText = 'position:fixed;right:12px;top:80px;z-index:9999999;background:#fef9c3;border:2px solid #eab308;padding:12px;border-radius:12px;width:350px;font-family:sans-serif;box-shadow:0 6px 18px rgba(0,0,0,.2)';
-    p.innerHTML = `<b>⚡ Import Vinted → Beebs</b><br><small style="display:block;word-break:break-word;margin:4px 0">${lastBeebsExport.fullTitle}</small><div style="font-size:11px;background:#fff;padding:6px;border-radius:6px;max-height:110px;overflow:auto;white-space:pre-wrap">${lastBeebsExport.description}</div><div style="font-size:11px;margin:4px 0">Prix brut: <b>${lastBeebsExport.price}</b></div><div id="th" style="display:flex;gap:4px;flex-wrap:wrap;background:#fff;padding:4px;border-radius:6px;min-height:30px"></div><button id="f1" style="width:100%;background:#111;color:#fff;padding:12px;border-radius:10px;font-weight:600;cursor:pointer;margin-top:8px">1. Remplir + ${lastBeebsExport.photosData.length} photos auto</button><div id="st2" style="font-size:11px;margin-top:6px"></div>`;
+    p.innerHTML = `<div style="display:flex;align-items:center;gap:6px"><b style="flex:1">⚡ Import Vinted → Beebs</b><span id="v2bMin" title="Réduire" style="cursor:pointer;font-weight:bold;padding:0 6px;font-size:16px">–</span><span id="v2bClose" title="Fermer et oublier cet import" style="cursor:pointer;font-weight:bold;padding:0 6px;font-size:16px;color:#b91c1c">✕</span></div><div id="v2bBody"><small style="display:block;word-break:break-word;margin:4px 0">${escHtml(lastBeebsExport.fullTitle)}</small><div style="font-size:11px;background:#fff;padding:6px;border-radius:6px;max-height:110px;overflow:auto;white-space:pre-wrap">${escHtml(lastBeebsExport.description) || '⚠️ Aucune description récupérée'}</div><div style="font-size:11px;margin:4px 0">Prix brut: <b>${lastBeebsExport.price}</b></div><div id="th" style="display:flex;gap:4px;flex-wrap:wrap;background:#fff;padding:4px;border-radius:6px;min-height:30px"></div><button id="f1" style="width:100%;background:#111;color:#fff;padding:12px;border-radius:10px;font-weight:600;cursor:pointer;margin-top:8px">1. Remplir + ${lastBeebsExport.photosData.length} photos auto</button><div id="st2" style="font-size:11px;margin-top:6px"></div></div>`;
     document.body.appendChild(p);
+
+    // Bouton "–" : réduit le panneau en une petite pastille (re-clic pour rouvrir)
+    const corps = document.getElementById('v2bBody');
+    document.getElementById('v2bMin').onclick = () => {
+      const reduit = corps.style.display === 'none';
+      corps.style.display = reduit ? '' : 'none';
+      p.style.width = reduit ? '350px' : 'auto';
+      document.getElementById('v2bMin').textContent = reduit ? '–' : '+';
+      document.getElementById('v2bMin').title = reduit ? 'Réduire' : 'Agrandir';
+    };
+
+    // Bouton "✕" : ferme le panneau et oublie l'import en cours,
+    // pour qu'il ne réapparaisse plus sur les autres pages Beebs.
+    // (Pour le retrouver : refaire "Exporter vers Beebs" depuis l'annonce Vinted.)
+    document.getElementById('v2bClose').onclick = async () => {
+      p.remove();
+      try { await chrome.storage.local.remove('lastBeebsExport'); } catch (e) { /* ignore */ }
+    };
 
     const files = []; const th = document.getElementById('th');
     (lastBeebsExport.photosData || []).forEach((d, i) => {
@@ -344,7 +426,8 @@ if (IS_BEEBS) {
           inp.dispatchEvent(new Event('change', { bubbles: true }));
           inp.dispatchEvent(new Event('input', { bubbles: true }));
         });
-        document.getElementById('st2').innerText = `✓ ${files.length} photos injectées + titre + desc + prix`;
+        document.getElementById('st2').innerText = `✓ ${files.length} photos injectées + titre + prix` +
+          (di ? ' + desc' : ' — ⚠️ champ description non trouvé sur Beebs');
       } else {
         document.getElementById('st2').innerText = `Photos: ${files.length} - input file non trouvé`;
       }
