@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Vinted → Beebs",
-  "version": "3.2.0",
-  "description": "Fix CORS + vraies photos + vraie description",
+  "version": "3.3.0",
+  "description": "Version fonctionnelle",
   "permissions": ["storage"],
   "host_permissions": ["https://*.vinted.fr/*", "https://*.vinted.net/*", "https://*.beebs.app/*"],
   "background": { "service_worker": "src/background.js" },
